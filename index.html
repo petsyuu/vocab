@@ -342,6 +342,11 @@ body>.wrap{position:relative;z-index:1}
     <p class="hint" style="margin-top:-8px">單字只存在這支手機的瀏覽器裡。換手機或清除瀏覽器資料前，記得先匯出備份。</p>
     <div class="btns"><button class="btn line" id="exportBtn">匯出備份</button><button class="btn line" id="importBtn">匯入備份</button></div>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <div class="btns"><button class="btn amber" id="pasteBtn">貼上匯入（從 Claude 版搬過來）</button></div>
+    <div id="pasteArea" hidden style="display:flex;flex-direction:column;gap:8px">
+      <textarea id="pasteBox" placeholder="在這裡貼上從 Claude 版複製的內容" style="min-height:90px;font-family:var(--mono);font-size:.75rem"></textarea>
+      <button class="btn" id="pasteGo">匯入這些單字</button>
+    </div>
     <button class="btn" id="closeSettings">完成</button>
   </div>
 </div>
@@ -777,17 +782,24 @@ $('#exportBtn').onclick = () => {
   flash('已匯出備份檔');
 };
 $('#importBtn').onclick = () => $('#importFile').click();
+function importText(text){
+  const d = JSON.parse(text.trim()); const list = Array.isArray(d) ? d : d.words;
+  if (!Array.isArray(list)) throw 0;
+  const have = new Set(words.map(w => w.id)); let n = 0;
+  list.forEach(w => { if (w && w.id && w.en && !have.has(w.id)) { words.push({ ...w }); have.add(w.id); n++; } });
+  if (d.meta?.days) for (const [k, v] of Object.entries(d.meta.days)) meta.days[k] = Math.max(v, meta.days[k] || 0);
+  jset(LS, words); jset(LSM, meta); showTab(tab);
+  return n;
+}
 $('#importFile').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  try {
-    const d = JSON.parse(await f.text()); const list = Array.isArray(d) ? d : d.words;
-    if (!Array.isArray(list)) throw 0;
-    const have = new Set(words.map(w => w.id)); let n = 0;
-    list.forEach(w => { if (w && w.id && w.en && !have.has(w.id)) { words.push(w); n++; } });
-    if (d.meta?.days) for (const [k, v] of Object.entries(d.meta.days)) meta.days[k] = Math.max(v, meta.days[k] || 0);
-    jset(LS, words); jset(LSM, meta); showTab(tab); flash(`已匯入 ${n} 個單字`);
-  } catch { flash('這個檔案不是單字本的備份檔'); }
+  try { flash(`已匯入 ${importText(await f.text())} 個單字`); } catch { flash('這個檔案不是單字本的備份檔'); }
   e.target.value = '';
+};
+$('#pasteBtn').onclick = () => { $('#pasteArea').hidden = false; $('#pasteBox').focus(); };
+$('#pasteGo').onclick = () => {
+  try { const n = importText($('#pasteBox').value); flash(n ? `已匯入 ${n} 個單字` : '這些單字之前已經匯入過了'); $('#pasteBox').value = ''; $('#pasteArea').hidden = true; }
+  catch { flash('貼上的內容不對，請回 Claude 版重新按「複製全部單字」'); }
 };
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 
