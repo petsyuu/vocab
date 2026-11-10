@@ -801,6 +801,17 @@ $('#pasteGo').onclick = () => {
   try { const n = importText($('#pasteBox').value); flash(n ? `已匯入 ${n} 個單字` : '這些單字之前已經匯入過了'); $('#pasteBox').value = ''; $('#pasteArea').hidden = true; }
   catch { flash('貼上的內容不對，請回 Claude 版重新按「複製全部單字」'); }
 };
+// one-tap import link: #import=<base64url JSON>
+try {
+  const m = location.hash.match(/^#import=([A-Za-z0-9_-]+)/);
+  if (m) {
+    let b = m[1].replace(/-/g, '+').replace(/_/g, '/'); b += '='.repeat((4 - b.length % 4) % 4);
+    const text = new TextDecoder().decode(Uint8Array.from(atob(b), c => c.charCodeAt(0)));
+    const n = importText(text);
+    history.replaceState(null, '', location.pathname);
+    setTimeout(() => flash(n ? `已加入 ${n} 個單字` : '這些單字之前已經加入過了'), 300);
+  }
+} catch { setTimeout(() => flash('匯入連結壞掉了，請重新複製'), 300); }
 if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 
 if (hasTTS) { loadVoices(); try { speechSynthesis.addEventListener('voiceschanged', loadVoices); } catch {} }
