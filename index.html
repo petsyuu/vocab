@@ -801,6 +801,19 @@ $('#pasteGo').onclick = () => {
   try { const n = importText($('#pasteBox').value); flash(n ? `已匯入 ${n} 個單字` : '這些單字之前已經匯入過了'); $('#pasteBox').value = ''; $('#pasteArea').hidden = true; }
   catch { flash('貼上的內容不對，請回 Claude 版重新按「複製全部單字」'); }
 };
+// iOS home-screen app bug: with a translucent status bar the page viewport can end above
+// the bottom of the screen, leaving a gap under the tab bar. Push the bar down by that gap.
+(function fixStandaloneGap(){
+  if (!navigator.standalone) return;
+  const bar = document.querySelector('.tabbar');
+  const fit = () => {
+    const portrait = innerHeight > innerWidth;
+    const gap = Math.round(screen.height - innerHeight);
+    bar.style.bottom = portrait && gap > 0 && gap < 120 ? -gap + 'px' : '';
+  };
+  fit(); addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 300));
+})();
+
 // one-tap import link: #import=<base64url JSON>
 try {
   const m = location.hash.match(/^#import=([A-Za-z0-9_-]+)/);
