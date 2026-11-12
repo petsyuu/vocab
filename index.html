@@ -338,8 +338,21 @@ body>.wrap{position:relative;z-index:1}
     <label class="switch">翻到下一張字卡時自動念出來<input type="checkbox" id="sAuto"></label>
     <div class="btns"><button class="btn line" id="sTest">試聽 “Good morning, how are you?”</button></div>
     <p class="hint" id="voiceHint">如果按了沒有聲音：手機請關掉靜音模式、把音量調大；iPhone 可以到「設定 › 輔助使用 › 朗讀內容 › 聲音」下載英文語音。</p>
+    <label>雲端同步</label>
+    <div id="cloudOut" style="display:flex;flex-direction:column;gap:8px">
+      <p class="hint" style="margin-top:-8px">登入後，手機、平板、電腦用同一個帳號就會看到同樣的單字。第一次用請按「建立帳號」。</p>
+      <input id="cEmail" type="email" autocomplete="username" placeholder="電子郵件" autocapitalize="off">
+      <input id="cPass" type="password" autocomplete="current-password" placeholder="密碼（至少 6 個字）">
+      <div class="btns"><button class="btn amber" id="cLogin">登入</button><button class="btn line" id="cSignup">建立帳號</button></div>
+      <button class="linkbtn" id="cReset" style="align-self:flex-start">忘記密碼</button>
+    </div>
+    <div id="cloudIn" hidden style="display:flex;flex-direction:column;gap:8px">
+      <p class="hint" style="margin-top:-8px">已登入 <b id="cWho"></b>，單字會自動同步。</p>
+      <div class="btns"><button class="btn line" id="cLogout">登出</button></div>
+    </div>
+    <p class="toast" id="cMsg" aria-live="polite"></p>
     <label>備份</label>
-    <p class="hint" style="margin-top:-8px">單字只存在這支手機的瀏覽器裡。換手機或清除瀏覽器資料前，記得先匯出備份。</p>
+    <p class="hint" style="margin-top:-8px">沒登入雲端同步時，單字只存在這支手機裡。換手機或清除瀏覽器資料前，記得先匯出備份。</p>
     <div class="btns"><button class="btn line" id="exportBtn">匯出備份</button><button class="btn line" id="importBtn">匯入備份</button></div>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
     <div class="btns"><button class="btn amber" id="pasteBtn">貼上匯入（從 Claude 版搬過來）</button></div>
@@ -351,6 +364,9 @@ body>.wrap{position:relative;z-index:1}
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 (() => {
 const $ = s => document.querySelector(s);
@@ -801,6 +817,76 @@ $('#pasteGo').onclick = () => {
   try { const n = importText($('#pasteBox').value); flash(n ? `已匯入 ${n} 個單字` : '這些單字之前已經匯入過了'); $('#pasteBox').value = ''; $('#pasteArea').hidden = true; }
   catch { flash('貼上的內容不對，請回 Claude 版重新按「複製全部單字」'); }
 };
+// ---------- cloud sync (Firebase) ----------
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyChJba5Ao6socqyTgvqx6Gkwbh7vGvvdt0",
+  authDomain: "vocab-6078b.firebaseapp.com",
+  projectId: "vocab-6078b",
+  storageBucket: "vocab-6078b.firebasestorage.app",
+  messagingSenderId: "917671327271",
+  appId: "1:917671327271:web:8aadca3e9795cb96c38002"
+};
+(function cloud(){
+  const msg = (t, err) => { const m = $('#cMsg'); m.className = 'toast' + (err ? ' err' : ''); m.textContent = t; };
+  if (!FIREBASE_CONFIG || !window.firebase) {
+    ['#cloudOut', '#cloudIn'].forEach(s => $(s).hidden = true);
+    msg(FIREBASE_CONFIG ? '現在沒有網路，連上網路後重開 App 就能同步。' : '雲端同步還在設定中。');
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  const auth = firebase.auth(), fs = firebase.firestore();
+  try { fs.enablePersistence({ synchronizeTabs: true }).catch(() => {}); } catch {}
+  const ERR = { 'auth/invalid-email': '電子郵件格式不對', 'auth/missing-password': '請輸入密碼', 'auth/weak-password': '密碼至少要 6 個字',
+    'auth/email-already-in-use': '這個電子郵件已經建立過帳號，請直接登入', 'auth/invalid-credential': '電子郵件或密碼不對',
+    'auth/wrong-password': '密碼不對', 'auth/user-not-found': '找不到這個帳號，請先建立帳號', 'auth/too-many-requests': '嘗試太多次了，請稍後再試',
+    'auth/network-request-failed': '連不上網路，請檢查網路後再試' };
+  const fail = e => msg(ERR[e?.code] || '發生錯誤，請再試一次', true);
+  const creds = () => [$('#cEmail').value.trim(), $('#cPass').value];
+  $('#cLogin').onclick = () => { msg('登入中…'); auth.signInWithEmailAndPassword(...creds()).catch(fail); };
+  $('#cSignup').onclick = () => { msg('建立中…'); auth.createUserWithEmailAndPassword(...creds()).catch(fail); };
+  $('#cReset').onclick = () => { const e = creds()[0]; if (!e) return msg('先在上面輸入你的電子郵件', true);
+    auth.sendPasswordResetEmail(e).then(() => msg('已寄出重設密碼的信，請到信箱查看')).catch(fail); };
+  $('#cLogout').onclick = () => auth.signOut();
+  let unsub = null;
+  auth.onAuthStateChanged(user => {
+    if (unsub) { unsub(); unsub = null; }
+    col = null;
+    $('#cloudOut').hidden = !!user; $('#cloudIn').hidden = !user;
+    if (!user) { setSync('單字存在這支手機裡'); return; }
+    $('#cWho').textContent = user.email; msg(''); $('#cPass').value = '';
+    setSync('同步中…');
+    const c = fs.collection('users/' + user.uid + '/words');
+    let first = true;
+    unsub = c.onSnapshot(async snap => {
+      const all = snap.docs.map(d => d.data()).filter(Boolean);
+      const remote = all.filter(d => d.type !== 'meta');
+      const rmeta = all.find(d => d.type === 'meta');
+      if (first) {
+        first = false; col = c;
+        // words added on this phone before signing in go up to the cloud
+        const ids = new Set(remote.map(w => w.id));
+        const localOnly = words.filter(w => !ids.has(w.id));
+        const merged = { id: '_meta', type: 'meta', days: { ...(rmeta?.days || {}) } };
+        for (const [k, v] of Object.entries(meta.days || {})) merged.days[k] = Math.max(v, merged.days[k] || 0);
+        meta = merged;
+        try {
+          const b = fs.batch();
+          localOnly.slice(0, 450).forEach(w => b.set(c.doc(w.id), w));
+          b.set(c.doc('_meta'), meta);
+          await b.commit();
+        } catch {}
+        if (localOnly.length) return;
+      }
+      words = remote.map(w => ({ ...w }));
+      if (rmeta) meta = { ...rmeta, days: { ...(rmeta.days || {}) } };
+      jset(LS, words); jset(LSM, meta);
+      renderStats(); if (tab === 'home') renderHome(); if (tab === 'list') renderList();
+      if (tab === 'review' && !byId(queue[qi])) renderReview(true);
+      setSync(snap.metadata.fromCache ? '已登入，等網路恢復就會同步' : '已同步：' + user.email);
+    }, () => { setSync('同步失敗，先存在這支手機裡'); col = null; });
+  });
+})();
+
 // iOS home-screen app bug: with a translucent status bar the page viewport can end above
 // the bottom of the screen, leaving a gap under the tab bar. Push the bar down by that gap.
 (function fixStandaloneGap(){
