@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#16213E">
+<meta name="theme-color" content="#F2F4F9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B101B" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="單字本">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
@@ -885,19 +886,6 @@ const FIREBASE_CONFIG = {
       setSync(snap.metadata.fromCache ? '已登入，等網路恢復就會同步' : '已同步：' + user.email);
     }, () => { setSync('同步失敗，先存在這支手機裡'); col = null; });
   });
-})();
-
-// iOS home-screen app bug: with a translucent status bar the page viewport can end above
-// the bottom of the screen, leaving a gap under the tab bar. Push the bar down by that gap.
-(function fixStandaloneGap(){
-  if (!navigator.standalone) return;
-  const bar = document.querySelector('.tabbar');
-  const fit = () => {
-    const portrait = innerHeight > innerWidth;
-    const gap = Math.round(screen.height - innerHeight);
-    bar.style.bottom = portrait && gap > 0 && gap < 120 ? -gap + 'px' : '';
-  };
-  fit(); addEventListener('resize', fit); addEventListener('orientationchange', () => setTimeout(fit, 300));
 })();
 
 // one-tap import link: #import=<base64url JSON>
